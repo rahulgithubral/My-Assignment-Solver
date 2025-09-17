@@ -1,0 +1,156 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: assignment-agent-db-dev
+    environment:
+      POSTGRES_DB: assignment_agent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for task queue
+  redis:
+    image: redis:7-alpine
+    container_name: assignment-agent-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (Development)
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: assignment-agent-backend-dev
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/assignment_agent
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      - SECRET_KEY=${SECRET_KEY:-dev_secret_key_change_in_production}
+      - DEBUG=true
+      - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+      - uploads_data_dev:/app/uploads
+      - vectorstore_data_dev:/app/data/vecstore
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker (Development)
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: assignment-agent-worker-dev
+    command: celery -A app.tasks worker --loglevel=info --concurrency=2
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/assignment_agent
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      - SECRET_KEY=${SECRET_KEY:-dev_secret_key_change_in_production}
+      - DEBUG=true
+    volumes:
+      - ../backend:/app
+      - uploads_data_dev:/app/uploads
+      - vectorstore_data_dev:/app/data/vecstore
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery Beat (Development)
+  beat:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: assignment-agent-beat-dev
+    command: celery -A app.tasks beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/assignment_agent
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      - SECRET_KEY=${SECRET_KEY:-dev_secret_key_change_in_production}
+      - DEBUG=true
+    volumes:
+      - ../backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Frontend (Development)
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: assignment-agent-frontend-dev
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+  # Flower (Celery monitoring)
+  flower:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: assignment-agent-flower-dev
+    command: celery -A app.tasks flower --port=5555
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/assignment_agent
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
+  uploads_data_dev:
+  vectorstore_data_dev:
+
+networks:
+  default:
+    name: assignment-agent-dev-network
