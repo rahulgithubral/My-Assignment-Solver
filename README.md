@@ -4,7 +4,7 @@ An AI-powered agent that automates university assignment workflows by ingesting 
 
 ## Project Details
 
-- **Name:** Rahul RS
+- **Name:** Rahul R S
 
 - **University:** IIT Kharagour
 
