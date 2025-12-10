@@ -20,14 +20,14 @@ WORKDIR /app
 # Copy the entire project (to access pyproject.toml from parent)
 COPY . .
 
-# Install Python dependencies from pyproject.toml
-RUN cd backend && pip install --no-cache-dir -e ..[dev]
+# Install Python dependencies from pyproject.toml (using absolute path)
+RUN pip install --no-cache-dir -e .[dev]
 
 # Development stage
 FROM base as development
 
 # Install development dependencies
-RUN cd backend && pip install --no-cache-dir \
+RUN pip install --no-cache-dir \
     black \
     isort \
     mypy \
